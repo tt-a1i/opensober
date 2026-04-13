@@ -8,25 +8,31 @@
 //   * File metadata (BOM, newline style, trailing-newline) is preserved by
 //     the hashline-edit layer's parseFile/reconstructFile round trip.
 //
-// Errors from the algorithm layer (HashMismatchError, EditRangeError,
-// EditOverlapError) already carry retry-friendly messages, so we let them
-// propagate unwrapped — formatting is the caller's job (CLI, opencode).
+// Output shaping (Round 7):
+//   * Success: structured key:value block with what was changed.
+//   * Errors from the algorithm layer are re-thrown with an appended "Action:" line
+//     so the agent has a concrete next step (re-read, split edits, check ranges).
 
 import { readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { type ToolDefinition, tool } from "@opencode-ai/plugin"
 import type { ResolvedConfig } from "../../config/types"
+import { formatKeyValueBlock, type KVRow } from "../common/format"
 import { assertCanWrite } from "../common/guards"
-import { applyEdits } from "../hashline-edit"
+import {
+  applyEdits,
+  EditOverlapError,
+  EditRangeError,
+  type FileMetadata,
+  HashMismatchError,
+  parseFile,
+} from "../hashline-edit"
 
 // SDK-bundled Zod. See comment in read.ts for why we don't import from "zod" directly.
 const z = tool.schema
 
 const DEFAULT_ALGORITHM = "sha1" as const
 
-// Zod rejects an out-of-shape edit before our algorithm layer gets a chance —
-// the algorithm layer's validation is still there as defense-in-depth, but
-// Zod surfaces clearer per-field errors to the agent at the wire layer.
 const EditSchema = z.object({
   lines: z
     .tuple([z.number().int().positive(), z.number().int().positive()])
@@ -41,6 +47,66 @@ const EditSchema = z.object({
         "split on \\n (and \\r\\n) into multiple lines; trailing newline = trailing blank line.",
     ),
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error wrapping — append a concrete remediation hint to algorithm-layer errors
+// ─────────────────────────────────────────────────────────────────────────────
+
+function withAction<T>(fn: () => T): T {
+  try {
+    return fn()
+  } catch (err) {
+    if (err instanceof HashMismatchError) {
+      throw new HashMismatchError(
+        `${err.message}\n\nAction: re-read the file with the 'read' tool to get fresh hashes, then retry.`,
+      )
+    }
+    if (err instanceof EditRangeError) {
+      throw new EditRangeError(
+        `${err.message}\n\nAction: re-read the file and verify your line numbers are within bounds.`,
+      )
+    }
+    if (err instanceof EditOverlapError) {
+      throw new EditOverlapError(
+        `${err.message}\n\nAction: split your edits so that no two edits target overlapping line ranges.`,
+      )
+    }
+    throw err
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Success summary
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatSuccess(
+  path: string,
+  edits: readonly { readonly lines: readonly [number, number] }[],
+  beforeLines: number,
+  afterLines: number,
+  meta: FileMetadata,
+): string {
+  const delta = afterLines - beforeLines
+  const deltaStr = delta === 0 ? "0" : delta > 0 ? `+${delta}` : `${delta}`
+  const rangesStr = edits.map((e) => `[${e.lines[0]},${e.lines[1]}]`).join(", ")
+  const lineEnding = meta.newline === "\n" ? "LF" : "CRLF"
+
+  const rows: KVRow[] = [
+    { key: "edits applied", value: String(edits.length) },
+    { key: "line ranges", value: rangesStr },
+    { key: "lines before", value: String(beforeLines) },
+    { key: "lines after", value: String(afterLines) },
+    { key: "net change", value: deltaStr },
+    { key: "line ending", value: `${lineEnding} (preserved)` },
+    { key: "BOM", value: meta.hasBOM ? "present (preserved)" : "none (preserved)" },
+  ]
+
+  return `edited: ${path}\n${formatKeyValueBlock(rows)}`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool factory
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function createEditTool(config: ResolvedConfig): ToolDefinition {
   const algorithm = config.tools.hashline_edit?.hash_algorithm ?? DEFAULT_ALGORITHM
@@ -70,13 +136,13 @@ export function createEditTool(config: ResolvedConfig): ToolDefinition {
         )
       }
 
-      // applyEdits throws HashMismatchError / EditRangeError / EditOverlapError on
-      // validation failures — we let those surface unwrapped so the agent sees the
-      // specific remediation hints the algorithm layer encodes.
-      const next = applyEdits(text, args.edits, algorithm)
+      const before = parseFile(text)
+      const next = withAction(() => applyEdits(text, args.edits, algorithm))
+      const after = parseFile(next)
+
       await writeFile(path, next, "utf8")
 
-      return `applied ${args.edits.length} edit(s) to ${path}`
+      return formatSuccess(path, args.edits, before.lines.length, after.lines.length, before.meta)
     },
   })
 }

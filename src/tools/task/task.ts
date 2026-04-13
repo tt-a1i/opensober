@@ -6,6 +6,9 @@
 // we return a structured acknowledgement so the agent sees that permission
 // and wiring are live, just not the executor.
 //
+// Round 7: the stub output is shaped to look like the future real task return —
+// key:value rows with caller / target / prompt preview / permission outcome.
+//
 // Permission rules (from v1-scope §1, enforced by assertCanDelegate):
 //   1. caller.can_delegate === true
 //   2. caller.readonly === true => target.readonly must also be true
@@ -13,10 +16,13 @@
 
 import { type ToolDefinition, tool } from "@opencode-ai/plugin"
 import type { ResolvedConfig } from "../../config/types"
+import { formatKeyValueBlock, type KVRow, truncatePreview } from "../common/format"
 import { assertCanDelegate } from "../common/guards"
 
 // SDK-bundled Zod. See comment in read.ts for why we don't import from "zod" directly.
 const z = tool.schema
+
+const PROMPT_PREVIEW_MAX = 80
 
 export function createTaskTool(config: ResolvedConfig): ToolDefinition {
   return tool({
@@ -33,17 +39,19 @@ export function createTaskTool(config: ResolvedConfig): ToolDefinition {
     execute: async (args, ctx): Promise<string> => {
       assertCanDelegate(ctx.agent, args.agent, config)
 
-      // v1 stub. Structured output so the calling agent can still reason about what
-      // "would have" happened and doesn't silently assume the task ran.
+      const rows: KVRow[] = [
+        { key: "caller", value: ctx.agent },
+        { key: "target", value: args.agent },
+        { key: "prompt", value: `"${truncatePreview(args.prompt, PROMPT_PREVIEW_MAX)}"` },
+        { key: "permission", value: "passed" },
+        { key: "readonly taint", value: "respected" },
+      ]
+
       return [
-        `task accepted (stub, not yet executed in this release):`,
-        `  caller:        ${ctx.agent}`,
-        `  target agent:  ${args.agent}`,
-        `  prompt length: ${args.prompt.length} characters`,
+        "task (stub — not actually executed)",
+        formatKeyValueBlock(rows),
         "",
-        "Permission and schema checks passed. Real sub-session execution is deferred " +
-          "to a later opensober release — treat this as confirmation that the wiring " +
-          "is correct, not as confirmation that work has been done.",
+        "This release does not wire sub-session execution. Do NOT assume the work was done.",
       ].join("\n")
     },
   })

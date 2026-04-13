@@ -58,7 +58,7 @@ const h = (s: string) => computeLineHash(s, "sha1")
 
 describe("createEditTool — happy path", () => {
   describe("#given a writable agent and correct hashes", () => {
-    it("#when edit runs #then the file is updated and the return value names what changed", async () => {
+    it("#when edit runs #then file is updated and the return value is a structured summary", async () => {
       // given
       const file = join(testDir, "a.txt")
       writeFileSync(file, "alpha\nbeta\ngamma\n")
@@ -73,22 +73,88 @@ describe("createEditTool — happy path", () => {
       )
       // then
       expect(readFileSync(file, "utf8")).toBe("alpha\nBETA\ngamma\n")
-      expect(out).toContain("applied 1 edit(s)")
+      expect(out).toContain(`edited: ${file}`)
+      expect(out).toContain("edits applied:  1")
+      expect(out).toContain("line ranges:    [2,2]")
+      expect(out).toContain("lines before:   3")
+      expect(out).toContain("lines after:    3")
+      expect(out).toContain("net change:     0")
+      expect(out).toContain("line ending:    LF (preserved)")
+      expect(out).toContain("BOM:            none (preserved)")
+    })
+  })
+
+  describe("#given an edit that adds lines", () => {
+    it("#when edit runs #then net change is positive", async () => {
+      // given
+      const file = join(testDir, "grow.txt")
+      writeFileSync(file, "a\nb\nc\n")
+      const edit = createEditTool(makeConfig({ orchestrator: { readonly: false } }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "grow.txt",
+          edits: [{ lines: [2, 2], expected_hashes: [h("b")], replacement: "B1\nB2\nB3" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("lines before:   3")
+      expect(out).toContain("lines after:    5")
+      expect(out).toContain("net change:     +2")
+    })
+  })
+
+  describe("#given a CRLF file", () => {
+    it("#when edited #then line-ending report says CRLF (preserved)", async () => {
+      // given
+      const file = join(testDir, "crlf.txt")
+      writeFileSync(file, "a\r\nb\r\nc\r\n")
+      const edit = createEditTool(makeConfig({ orchestrator: {} }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "crlf.txt",
+          edits: [{ lines: [2, 2], expected_hashes: [h("b")], replacement: "B" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("line ending:    CRLF (preserved)")
+    })
+  })
+
+  describe("#given a file with UTF-8 BOM", () => {
+    it("#when edited #then BOM report says present (preserved)", async () => {
+      // given
+      const file = join(testDir, "bom.txt")
+      writeFileSync(file, "\uFEFFa\nb\n")
+      const edit = createEditTool(makeConfig({ orchestrator: {} }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "bom.txt",
+          edits: [{ lines: [1, 1], expected_hashes: [h("a")], replacement: "A" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("BOM:            present (preserved)")
     })
   })
 
   describe("#given multiple non-overlapping edits", () => {
-    it("#when edit runs #then all are applied atomically, order-independent", async () => {
+    it("#when edit runs #then ranges list is reported in args order", async () => {
       // given
       const file = join(testDir, "multi.txt")
       writeFileSync(file, "a\nb\nc\nd\n")
       const edit = createEditTool(makeConfig({ orchestrator: { readonly: false } }))
       // when
-      await edit.execute(
+      const out = await edit.execute(
         {
           file: "multi.txt",
           edits: [
-            // Deliberately out of source order.
+            // Deliberately out of source order — output should reflect caller order.
             { lines: [4, 4], expected_hashes: [h("d")], replacement: "D" },
             { lines: [1, 1], expected_hashes: [h("a")], replacement: "A" },
           ],
@@ -97,6 +163,8 @@ describe("createEditTool — happy path", () => {
       )
       // then
       expect(readFileSync(file, "utf8")).toBe("A\nb\nc\nD\n")
+      expect(out).toContain("edits applied:  2")
+      expect(out).toContain("line ranges:    [4,4], [1,1]")
     })
   })
 })
@@ -124,7 +192,7 @@ describe("createEditTool — permission guard", () => {
   })
 })
 
-describe("createEditTool — algorithm errors propagate", () => {
+describe("createEditTool — algorithm errors propagate with action hints", () => {
   describe("#given a stale hash", () => {
     it("#when edit runs #then HashMismatchError and the file is unchanged", async () => {
       // given
@@ -144,7 +212,7 @@ describe("createEditTool — algorithm errors propagate", () => {
       expect(readFileSync(file, "utf8")).toBe("content\n")
     })
 
-    it("#when hash mismatches #then the error message hints at re-reading", async () => {
+    it("#when hash mismatches #then the error carries an 'Action: re-read' hint", async () => {
       // given
       const file = join(testDir, "hint.txt")
       writeFileSync(file, "line\n")
@@ -158,7 +226,48 @@ describe("createEditTool — algorithm errors propagate", () => {
           },
           fakeCtx("orchestrator", testDir),
         ),
-      ).rejects.toThrow(/re-read/)
+      ).rejects.toThrow(/Action: re-read the file with the 'read' tool/)
+    })
+  })
+
+  describe("#given a range past the end of the file", () => {
+    it("#when edit runs #then EditRangeError with a 'verify line numbers' action", async () => {
+      // given
+      const file = join(testDir, "oob.txt")
+      writeFileSync(file, "a\nb\n")
+      const edit = createEditTool(makeConfig({ orchestrator: {} }))
+      // when / then
+      await expect(
+        edit.execute(
+          {
+            file: "oob.txt",
+            edits: [{ lines: [5, 5], expected_hashes: ["00000000"], replacement: "X" }],
+          },
+          fakeCtx("orchestrator", testDir),
+        ),
+      ).rejects.toThrow(/Action: re-read the file and verify your line numbers/)
+    })
+  })
+
+  describe("#given overlapping edits", () => {
+    it("#when edit runs #then EditOverlapError with a 'split your edits' action", async () => {
+      // given
+      const file = join(testDir, "overlap.txt")
+      writeFileSync(file, "a\nb\nc\nd\n")
+      const edit = createEditTool(makeConfig({ orchestrator: {} }))
+      // when / then
+      await expect(
+        edit.execute(
+          {
+            file: "overlap.txt",
+            edits: [
+              { lines: [2, 3], expected_hashes: [h("b"), h("c")], replacement: "X" },
+              { lines: [3, 4], expected_hashes: [h("c"), h("d")], replacement: "Y" },
+            ],
+          },
+          fakeCtx("orchestrator", testDir),
+        ),
+      ).rejects.toThrow(/Action: split your edits/)
     })
   })
 })

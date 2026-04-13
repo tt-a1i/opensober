@@ -42,7 +42,7 @@ function fakeCtx(agent: string) {
 
 describe("createTaskTool — permission matrix", () => {
   describe("#given writable caller and writable target", () => {
-    it("#when invoked #then stub acknowledgement is returned", async () => {
+    it("#when invoked #then stub acknowledgement is returned with structured fields", async () => {
       // given
       const task = createTaskTool(
         makeConfig({
@@ -56,9 +56,35 @@ describe("createTaskTool — permission matrix", () => {
         fakeCtx("orchestrator"),
       )
       // then
-      expect(out).toContain("caller:        orchestrator")
-      expect(out).toContain("target agent:  other")
-      expect(out).toContain("stub")
+      expect(out).toContain("task (stub")
+      expect(out).toContain("caller:          orchestrator")
+      expect(out).toContain("target:          other")
+      expect(out).toContain(`prompt:          "do a thing"`)
+      expect(out).toContain("permission:      passed")
+      expect(out).toContain("readonly taint:  respected")
+      expect(out).toContain("Do NOT assume the work was done")
+    })
+  })
+
+  describe("#given a long prompt", () => {
+    it("#when invoked #then the prompt preview is truncated with an ellipsis", async () => {
+      // given
+      const task = createTaskTool(
+        makeConfig({
+          orchestrator: { readonly: false, can_delegate: true },
+          other: { readonly: false },
+        }),
+      )
+      const longPrompt = "a".repeat(200)
+      // when
+      const out = await task.execute(
+        { agent: "other", prompt: longPrompt },
+        fakeCtx("orchestrator"),
+      )
+      // then
+      expect(out).toContain("…")
+      // First 80 chars of the prompt should appear verbatim.
+      expect(out).toContain("a".repeat(80))
     })
   })
 
@@ -74,7 +100,7 @@ describe("createTaskTool — permission matrix", () => {
       // when / then
       await expect(
         task.execute({ agent: "explore", prompt: "read stuff" }, fakeCtx("orchestrator")),
-      ).resolves.toContain("target agent:  explore")
+      ).resolves.toContain("target:          explore")
     })
   })
 
@@ -90,7 +116,7 @@ describe("createTaskTool — permission matrix", () => {
       // when / then
       await expect(
         task.execute({ agent: "security-review", prompt: "audit this" }, fakeCtx("reviewer")),
-      ).resolves.toContain("stub")
+      ).resolves.toContain("task (stub")
     })
   })
 
