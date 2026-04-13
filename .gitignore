@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# test coverage
+coverage/
+
+# editor/os
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# env
+.env
+.env.local
+
+# logs (fallback when user overrides session log path)
+*.log
+
+# per-session state lives under $XDG_STATE_HOME/opensober (default ~/.local/state/opensober);
+# this entry only catches an in-repo override via OPENSOBER_STATE_DIR=./.opensober for tests.
+.opensober/
+
+# local scratch
+scratch/
+.local-ignore/

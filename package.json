@@ -1,0 +1,78 @@
+{
+  "name": "opensober",
+  "version": "0.1.0",
+  "description": "An opencode plugin that doesn't try to be clever. Stay sober. Nothing is magic.",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "agent",
+    "ai",
+    "llm"
+  ],
+  "license": "MIT",
+  "author": "tt-a1i",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tt-a1i/opensober.git"
+  },
+  "homepage": "https://github.com/tt-a1i/opensober#readme",
+  "bugs": {
+    "url": "https://github.com/tt-a1i/opensober/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "opensober": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema.json": "./dist/opensober.schema.json"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun --format esm --external @ast-grep/napi && tsc --emitDeclarationOnly && bun run build:cli && bun run build:schema",
+    "build:cli": "bun build src/cli/index.ts --outdir dist/cli --target bun --format esm --external @ast-grep/napi",
+    "build:schema": "bun run script/build-schema.ts",
+    "clean": "rm -rf dist",
+    "prepack": "bun run clean && bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "prepare": "simple-git-hooks"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.41.1",
+    "@clack/prompts": "^0.11.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "@opencode-ai/plugin": "^1.4.0",
+    "@opencode-ai/sdk": "^1.4.0",
+    "@vscode/ripgrep": "^1.15.9",
+    "commander": "^14.0.2",
+    "jsonc-parser": "^3.3.1",
+    "picocolors": "^1.1.1",
+    "vscode-jsonrpc": "^8.2.0",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "bun-types": "1.3.11",
+    "simple-git-hooks": "^2.11.0",
+    "typescript": "^5.7.3",
+    "zod-to-json-schema": "^3.23.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bun run lint && bun run typecheck"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

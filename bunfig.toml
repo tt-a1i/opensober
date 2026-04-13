@@ -1,0 +1,9 @@
+# opensober — Bun runtime configuration.
+
+[install]
+registry = "https://registry.npmjs.org/"
+exact = false
+
+[test]
+preload = ["./test-setup.ts"]
+coverage = false
