@@ -11,13 +11,16 @@
 
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin"
 import { loadConfig } from "./config/loader"
+import { createTools } from "./tools"
 
 export const NAME = "opensober"
 export const VERSION = "0.1.0"
 
 const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
-  loadConfig({ cwd: input.directory })
-  return {}
+  const { config } = loadConfig({ cwd: input.directory })
+  return {
+    tool: createTools(config),
+  }
 }
 
 export default opensober

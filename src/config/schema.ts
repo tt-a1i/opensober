@@ -109,7 +109,9 @@ export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>
 const HashlineEditConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
-    hash_algorithm: z.enum(["sha1", "sha256", "blake3"]).default("sha1"),
+    // v1 supports sha1 and sha256 only (per Round 5 Q1 = A). blake3 can be added
+    // later without a schema migration — adding a new enum value is forward-compatible.
+    hash_algorithm: z.enum(["sha1", "sha256"]).default("sha1"),
     reject_on_stale: z.boolean().default(true),
     context_lines: z.number().int().min(0).max(20).default(3),
   })

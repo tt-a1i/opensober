@@ -13,6 +13,7 @@ import { BUILTIN_AGENT_NAMES } from "../config/defaults"
 import type { ResolvedAgent } from "../config/extends"
 import { loadConfig } from "../config/loader"
 import type { ConfigLayer, LoaderResult } from "../config/types"
+import { TOOL_NAMES } from "../tools"
 import { type ErrorSink, formatError } from "./format-error"
 
 export type OutSink = (line: string) => void
@@ -78,10 +79,17 @@ function printAgents(agents: Record<string, ResolvedAgent>, out: OutSink): void 
   }
 }
 
+function printTools(out: OutSink): void {
+  out(pico.bold("tools:"))
+  out(`  ${[...TOOL_NAMES].sort().join(", ")}`)
+}
+
 function printSummary(result: LoaderResult, out: OutSink): void {
   printLayers(result.layers, out)
   out("")
   printAgents(result.config.agents, out)
+  out("")
+  printTools(out)
   out("")
   out(pico.dim("(Session not started — current scope only verifies config loads.)"))
 }
