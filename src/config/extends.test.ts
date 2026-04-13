@@ -38,12 +38,12 @@ describe("resolveAgents — built-ins", () => {
   })
 
   describe("#given builtins keep their baseline tools", () => {
-    it("#when resolved #then explore retains its allowlist", () => {
+    it("#when resolved #then explore retains its allowlist (aligned with registered tools)", () => {
       // when
       const result = resolveAgents({}, GLOBAL_MODEL)
-      // then
-      expect(result.explore?.tools?.allow).toContain("grep")
-      expect(result.explore?.tools?.allow).toContain("glob")
+      // then — the built-in allowlist intentionally only references tools opensober
+      // actually registers. Expanding it must coincide with registering the tool.
+      expect(result.explore?.tools?.allow).toContain("read")
     })
   })
 })

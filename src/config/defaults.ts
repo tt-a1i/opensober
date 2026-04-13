@@ -29,8 +29,12 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentName, AgentDefinition> = {
     description:
       "Read-only exploration agent. Cannot edit, write, or delegate. Useful for fast " +
       "codebase questions where the answer is in the repo, not in another agent.",
+    // Keep this list aligned with tools actually registered by createTools(). Expanding
+    // it before the corresponding tool ships will make `opensober doctor` warn about
+    // an unknown tool — the drift is by design; fix by registering the tool, not by
+    // inflating the allowlist.
     tools: {
-      allow: ["grep", "glob", "read", "lsp_symbols", "lsp_goto_definition", "lsp_find_references"],
+      allow: ["read"],
     },
   },
 

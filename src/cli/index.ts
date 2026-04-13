@@ -9,6 +9,7 @@
 
 import { Command } from "commander"
 import { NAME, VERSION } from "../index"
+import { doctorCommand } from "./doctor"
 import { runCommand } from "./run"
 
 const program = new Command()
@@ -17,10 +18,14 @@ program.name(NAME).description("An opencode plugin that doesn't try to be clever
 
 program
   .command("doctor")
-  .description("run health diagnostics against the current environment")
-  .action(() => {
-    console.log("opensober doctor: not yet implemented")
-    process.exitCode = 1
+  .description("run health diagnostics against the current opensober configuration")
+  .option("--cwd <path>", "directory to start config discovery from", process.cwd())
+  .option("--config <path>", "path to a config file to use as the highest-priority layer")
+  .action((opts: { cwd: string; config?: string }) => {
+    process.exitCode = doctorCommand({
+      cwd: opts.cwd,
+      configOverride: opts.config,
+    })
   })
 
 program
