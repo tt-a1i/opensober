@@ -4,6 +4,10 @@
 // Each tool is wired lazily at this point — the per-tool `createXxxTool(config)`
 // factories close over the resolved config so runtime permission and algorithm
 // decisions have everything they need.
+//
+// `config.tools.disabled` filters out entries before they're returned. Unknown
+// names in the list are ignored silently; `doctor` surfaces them separately so
+// users notice typos without the plugin failing to load.
 
 import type { ToolDefinition } from "@opencode-ai/plugin"
 import type { ResolvedConfig } from "../config/types"
@@ -11,16 +15,24 @@ import { createEditTool } from "./edit/edit"
 import { createReadTool } from "./read/read"
 import { createTaskTool } from "./task/task"
 
-/** Names of tools opensober registers in v1. Used by the CLI's summary view. */
+/** Names of tools opensober ships in v1. Used by the CLI's summary view and by doctor. */
 export const TOOL_NAMES = ["read", "edit", "task"] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
-export function createTools(config: ResolvedConfig): Record<ToolName, ToolDefinition> {
-  return {
+export function createTools(config: ResolvedConfig): Partial<Record<ToolName, ToolDefinition>> {
+  const all: Record<ToolName, ToolDefinition> = {
     read: createReadTool(config),
     edit: createEditTool(config),
     task: createTaskTool(config),
   }
+
+  const disabled = new Set(config.tools.disabled)
+  const result: Partial<Record<ToolName, ToolDefinition>> = {}
+  for (const name of TOOL_NAMES) {
+    if (disabled.has(name)) continue
+    result[name] = all[name]
+  }
+  return result
 }
 
 export { assertCanDelegate, assertCanWrite, ToolPermissionError } from "./common/guards"

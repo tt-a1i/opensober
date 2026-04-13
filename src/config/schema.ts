@@ -120,6 +120,10 @@ const HashlineEditConfigSchema = z
 const ToolsConfigSchema = z
   .object({
     hashline_edit: HashlineEditConfigSchema.optional(),
+    // Parallel to hooks.disabled / mcp.disabled / skills.disabled. Names listed here are
+    // filtered out by `createTools()` before registration. Unknown names are tolerated
+    // (future tool names, typos surface via `doctor` later).
+    disabled: z.array(z.string()).default([]),
   })
   .strict()
 
@@ -167,6 +171,11 @@ export const CONFIG_VERSION = 1
 
 export const ConfigSchema = z
   .object({
+    // Optional `$schema` reference — permitted at the top level so editor-autocompletion
+    // templates (which conventionally include this pointer) load without tripping strict
+    // mode. We don't validate the URL; we just accept and ignore it at runtime.
+    $schema: z.string().optional(),
+
     version: z.literal(CONFIG_VERSION).default(CONFIG_VERSION),
 
     /** Global default model. Used as the baseline `model` for any agent that omits one. */
@@ -177,7 +186,7 @@ export const ConfigSchema = z
     // Defaults are spelled out fully on purpose: Zod 4's `.default(x)` does not re-parse `x`
     // through the inner schema, so nested `.default([])` calls are NOT applied when the
     // parent block is omitted. Explicit defaults keep the resolved shape predictable.
-    tools: ToolsConfigSchema.default({}),
+    tools: ToolsConfigSchema.default({ disabled: [] }),
     hooks: HooksConfigSchema.default({ disabled: [] }),
     mcp: McpConfigSchema.default({ disabled: [] }),
     skills: SkillsConfigSchema.default({ disabled: [], paths: [] }),

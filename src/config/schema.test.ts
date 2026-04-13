@@ -9,7 +9,7 @@ describe("ConfigSchema", () => {
       // then
       expect(result.version).toBe(CONFIG_VERSION)
       expect(result.agents).toEqual({})
-      expect(result.tools).toEqual({})
+      expect(result.tools).toEqual({ disabled: [] })
       expect(result.hooks.disabled).toEqual([])
       expect(result.mcp.disabled).toEqual([])
       expect(result.skills.disabled).toEqual([])
@@ -45,6 +45,33 @@ describe("ConfigSchema", () => {
       const result = ConfigSchema.parse(input)
       // then
       expect(result.experimental).toEqual({ future_feature: { x: 1 } })
+    })
+  })
+
+  describe("#given a top-level $schema string", () => {
+    it("#when parsed #then accepted (editor-template friendly)", () => {
+      // given
+      const input = { $schema: "https://example.com/opensober.schema.json" }
+      // when / then
+      expect(() => ConfigSchema.parse(input)).not.toThrow()
+    })
+  })
+
+  describe("#given tools.disabled", () => {
+    it("#when parsed #then defaults to empty array", () => {
+      // when
+      const result = ConfigSchema.parse({})
+      // then
+      expect(result.tools.disabled).toEqual([])
+    })
+
+    it("#when set explicitly #then preserved as-is", () => {
+      // given
+      const input = { tools: { disabled: ["task"] } }
+      // when
+      const result = ConfigSchema.parse(input)
+      // then
+      expect(result.tools.disabled).toEqual(["task"])
     })
   })
 
