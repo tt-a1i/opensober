@@ -16,8 +16,13 @@ An opencode plugin that doesn't try to be clever. Agent tools keep getting smart
 
 ## Install
 
+Not yet published to npm. For local development:
+
 ```bash
-bun add opensober
+git clone <this-repo>
+cd opensober
+bun install
+bun run build
 ```
 
 Peer requirement: `@opencode-ai/plugin ^1.4.0`. Bun-only (>= 1.3.0); no Node fallback.

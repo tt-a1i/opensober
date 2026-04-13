@@ -217,25 +217,27 @@ interface AgentDefinition {
 **砍**：`websearch`（用户自装）
 
 ### 兼容层
-- `.mcp.json` 加载 ✅
-- `${VAR}` 环境变量展开 ✅
+- `.mcp.json` 加载 ⏸ **降级为 deferred**（v1-scope 原先 ✅，对照 OmO 时发现未实现；Round 8 要先做 task 真执行，MCP 本身不在主线上。见 round-7.5-memo §10 gap I4）
+- `${VAR}` 环境变量展开 ⏸ 同上 deferred
 - Claude Code marketplace plugins ✂
 
 ### Skill 嵌入 MCP
-- stdio ✅
-- HTTP（Bearer token 认证）✅
+- stdio ⏸ deferred（skill 系统本身尚未真接线，留到 skill 实装时一起）
+- HTTP（Bearer token 认证）⏸ deferred
 - **OAuth ✂**（v2 再做）
 
 ---
 
 ## 8. Claude Code 兼容层
 
-- Commands：`.claude/commands/` ✅
-- Skills：`.claude/skills/*/SKILL.md` ✅
-- Agents：`.claude/agents/*.md` ✅
-- MCP：`.mcp.json` / `~/.claude.json` ✅
-- Hooks：`settings.json` 的 PreToolUse/PostToolUse ✅
+- Commands：`.claude/commands/` ⏸ deferred（未实装）
+- Skills：`.claude/skills/*/SKILL.md` ⏸ deferred
+- Agents：`.claude/agents/*.md` ⏸ deferred
+- MCP：`.mcp.json` / `~/.claude.json` ⏸ deferred（见 §7）
+- Hooks：`settings.json` 的 PreToolUse/PostToolUse ⏸ deferred
 - Plugins marketplace ✂
+
+> **Scope 诚实化（Round 7 后）**：原先 §7 / §8 多项标 ✅ 实为"已规划但未实装"。对照 oh-my-opencode 后发现 opensober 在真实加载路径上并没有消费这些文件，因此全部降级为 ⏸。实装时机取决于主线需求（task 真执行 → hook 管线 → skill / MCP 链路），不是 v1 必须。
 
 ---
 

@@ -68,27 +68,48 @@ export type SubtaskPartInput = {
 
 **结论**：不走 SubtaskPartInput，走 child session。
 
-### 推荐最小可行路径（同步版）
+### 推荐最小可行路径（promptAsync + poll + messages）
+
+> **重要更正**：本节原先推荐 `session.prompt` 的同步阻塞路径。对照 oh-my-opencode 的生产代码（`src/tools/delegate-task/sync-*`）后确认：**`session.prompt` 的阻塞语义不可靠**，OmO 在真实场景下走的是 promptAsync + 轮询 + 回取 messages 的路线。我们沿用其经过验证的形态。
 
 ```
 1. task(agent, prompt) 被 orchestrator 调用
-2. assertCanDelegate(caller, target, config)   [已有，不变]
-3. client.session.create({ body: { parentID: ctx.sessionID } })
-   → 拿到 childSession.id
-4. client.session.prompt({
+2. assertCanDelegate(caller, target, config)                    [已有]
+3. parentSession = await client.session.get({ path: { id: ctx.sessionID } })
+   → 取出 parent 的 directory / projectID，以便 child 继承
+4. childSession = await client.session.create({
+     body: { parentID: ctx.sessionID, title },
+     query: { directory: parentSession.directory },
+   })
+5. await client.session.promptAsync({
      path: { id: childSession.id },
      body: {
        agent: args.agent,
-       parts: [{ type: "text", text: args.prompt }]
-     }
+       parts: [{ type: "text", text: args.prompt }],
+     },
    })
-5. 等待返回的 { info: AssistantMessage, parts: Part[] }
-6. 提取文本：parts.filter(p => p.type === "text").map(p => p.text).join("\n\n")
-7. 检查 info.error：有就包装为 ToolExecutionError throw 出去
-8. 返回文本 + 结构化 header（caller/target/model/cost/tokens/duration）
+   // 立即返回 204；child 在后台推进
+6. 轮询循环（带 ctx.abort 监听）：
+   a. await sleep(POLL_INTERVAL_MS)
+   b. if (ctx.abort.aborted) → await client.session.abort({ path: { id: childSession.id } })
+      → throw with "task cancelled by parent"
+   c. status = await client.session.status(...)
+   d. 计数 assistant turns，超上限（建议 300）→ abort + throw
+   e. if (status[childSession.id] === "idle" && 有终止消息) → break
+7. messages = await client.session.messages({ path: { id: childSession.id } })
+   → 取最新一条 assistant 消息 + 其 parts
+8. 检查 info.error；若 set 则分类并抛出对应工具级错误
+9. 提取文本：parts.filter(p => p.type === "text").map(p => p.text).join("\n\n")
+10. 返回文本 + 结构化 header（caller/target/model/cost/tokens/duration）
 ```
 
-关键开销：步骤 4 是阻塞调用，等子 agent 整个回合（含它自己的 tool calls）跑完。
+关键点：
+
+- **不用 `session.prompt`**：其返回时机不稳定，可能在 agent 完整回合前就 resolve
+- **abort 传染手动做**：v1-scope §1 的权限契约要求 ctx.abort 能真正停止 child；SDK 不自动传染
+- **循环上限 + 节流**：防无限工具循环，建议 max_turns = 300，poll_interval = 500ms~1s
+- **结果从 `session.messages` 取**，不是 prompt 的直接返回值
+- **`permission` override**：`session.create.body.permission` 应传 `question/*: deny`，否则 child 可能停在向用户提问
 
 ### 异步版（后面才做）
 
@@ -292,14 +313,61 @@ task completed
 
 ## 9. 一句话判断
 
-**Round 8 可以按"同步版 child session"做**。SDK 提供了完整的父子会话 + prompt + abort 能力，核心工作是：
-1. 把 client 从 plugin entry 穿到 task 工具
-2. 写一个 100 行左右的 `runChildSession`
-3. 套上 Round 7 的 key:value 输出风格
-4. 处理好 abort + error 的 5 种分类
+**Round 8 走 promptAsync + poll + messages**（见 §2 更正后的路径）。SDK 有完整的父子会话 + abort 能力，核心工作是：
+1. 把 client 从 plugin entry 穿到 task 工具（同时补 `injectServerAuthIntoClient`）
+2. 写一个带轮询循环的 `runChildSession`（约 150 行）
+3. 套上 Round 7 的 key:output 输出风格
+4. 处理好 abort 手动传染 + error 的 5 种分类 + max_turns 上限
 
+**不走 `session.prompt` 同步路径**（OmO 的生产代码证明它不可靠）。  
 **不走 SubtaskPartInput**（那是给 LLM 直接输出用的，不适合我们的 tool 模型）。  
 **不做异步/后台**（留 v1.1）。  
-**不做流式进度**（留 v2，太大）。
+**不做流式进度**（留 v2）。
 
-Round 8 开设计盘前，建议 5 分钟 spike 一下第 8 节的 5 个 TODO，然后把第 7 节的 7 个问题过完就可以动手。
+Round 8 开设计盘前，先过一遍第 10 节的 gap report + 第 7 节的 7 个拍板问题就可以动手。
+
+---
+
+## 10. Subagent gap report（Round 7 后对照 oh-my-opencode）
+
+Round 7 之后又做了一轮针对性对照审查（4 个并发 subagent 各负责一块），发现 opensober 相对于 OmO 生产实现有多处运行时风险。下面按严重性重排，标注我们当前处理状态。
+
+### BLOCKER — Round 8 动工前必须处理
+
+| # | 问题 | 当前状态 |
+|---|---|---|
+| B1 | `session.prompt` 阻塞语义不可靠，必须走 promptAsync + poll | ✅ §2 已重写 |
+| B2 | `$schema` 顶层字段被 `.strict()` 拒，真实用户会踩 | ✅ 已修（见 commit feat(config): accept top-level $schema...）|
+| B3 | `createTools(config)` 接不下 client，task 拿不到 ctx.sessionID | 🔜 Round 8 第一件事 |
+
+### IMPORTANT — 进入 Round 8 前置清单
+
+| # | 问题 | OmO 参考 | 处理 |
+|---|---|---|---|
+| I1 | 缺 `injectServerAuthIntoClient` | `src/shared/opencode-server-auth.ts:158` | Round 8 |
+| I2 | 缺 child session `permission: question/* deny` | `src/tools/delegate-task/sync-session-creator.ts:17` | Round 8 |
+| I3 | 缺 plugin dispose / 重载幂等 | `src/index.ts:23, 38`；`src/plugin-dispose.ts:18-24` | Round 8（加 manager 时）|
+| I4 | `.mcp.json` + `${VAR}` 展开 v1-scope 里 ✅ 但未实现 | `src/features/claude-code-mcp-loader/*` | ✅ scope 已降级为 deferred |
+| I5 | 缺 `tools.disabled` 开关 | `src/plugin/tool-registry.ts:283` | ✅ 已修 |
+| I6 | `read` 没硬截断，大文件吃光 context | `src/hooks/tool-output-truncator.ts` | v1.1 |
+| I7 | 缺 max-turns 断路器 | `src/tools/delegate-task/sync-session-poller.ts:53,150-158` | Round 8（已纳入 §2 路径）|
+| I8 | logger module-level state 重载不安全 | `src/shared/logger.ts:7-11` | Round 8 加 dispose 时一起 |
+
+### NICE-TO-HAVE — v1.1+ 或用到再说
+
+- sanitizeJsonSchema（`contentEncoding` 等关键字剥离）——目前没用到 base64 类 schema
+- `experimental.max_tools` 上限——我们只 3 个工具
+- `query.directory` 转发——Round 8 方案里已顺带纳入
+- `config.get()` 取系统默认 model——model 来自我们自己的 config
+- 外部 plugin 冲突检测——小众
+- SIGINT/SIGTERM 注册 cleanup——Round 8 加 manager 时再看
+
+### 对 Round 8 的影响
+
+§2 的核心路径已重写。§6 / §7 的拍板问题仍然有效，但现在多了以下**必须一并解决**的条目：
+
+- `runChildSession` 必须在循环里监听 `ctx.abort` 并主动调 `client.session.abort(childID)`
+- `createTools` 签名补 `{ client, /* 其它 deps */ }`
+- `src/index.ts` 入口进 `injectServerAuthIntoClient(ctx.client)` 等效实现
+- `session.create.body` 带 `permission` override + `query.directory` 继承
+- 把 stub `task.ts` 换成真 runner 时，Round 7 的 key:value 输出格式继续用

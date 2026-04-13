@@ -16,8 +16,13 @@
 
 ## 安装
 
+尚未发布到 npm。本地开发：
+
 ```bash
-bun add opensober
+git clone <本仓库>
+cd opensober
+bun install
+bun run build
 ```
 
 Peer 依赖：`@opencode-ai/plugin ^1.4.0`。仅支持 Bun（>= 1.3.0），不提供 Node fallback。
