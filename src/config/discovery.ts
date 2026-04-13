@@ -20,13 +20,16 @@ import type { ConfigSource } from "./types"
 const PROJECT_CONFIG_RELATIVE = ".opensober/config.jsonc"
 const USER_CONFIG_RELATIVE = ".config/opensober/config.jsonc"
 
+// Optional fields use `T | undefined` (instead of bare `T` with `?`) so callers
+// under exactOptionalPropertyTypes can forward `string | undefined` values without
+// stripping undefined first. This is the standard pattern for an "options bag".
 export interface DiscoveryOptions {
   /** Working directory we start the project-root walk from. Defaults to process.cwd(). */
-  readonly cwd?: string
+  readonly cwd?: string | undefined
   /** Path passed via CLI `--config`. Becomes the highest-priority layer when set. */
-  readonly cliOverride?: string
+  readonly cliOverride?: string | undefined
   /** Override for $HOME — useful in tests so we don't touch the real user dir. */
-  readonly userHome?: string
+  readonly userHome?: string | undefined
 }
 
 /** A discovery candidate. `path: null` means "this source does not apply right now". */
