@@ -2,6 +2,8 @@
 
 > *Stay sober. Nothing is magic.*
 
+**English** | [简体中文](./README.zh-CN.md)
+
 An opencode plugin that doesn't try to be clever. Agent tools keep getting smarter, more magical, more opinionated. opensober goes the other way: every behavior is visible, disable-able, and fails loud.
 
 **Status:** v0.1.x, API not yet stable. Not yet published to npm.
