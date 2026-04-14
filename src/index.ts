@@ -43,4 +43,6 @@ const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
   }
 }
 
+// opencode expects PluginModule = { server: Plugin }, not a bare default export.
 export default opensober
+export const server = opensober

@@ -28,3 +28,4 @@ coverage/
 # local scratch
 scratch/
 .local-ignore/
+opensober-*.tgz
