@@ -29,7 +29,6 @@ import {
 const z = tool.schema
 
 const PROMPT_PREVIEW_MAX = 80
-const RESULT_PREVIEW_MAX = 2000
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model parsing
@@ -342,9 +341,8 @@ export function formatTaskNotification(task: BackgroundTask): string {
     task.status === "completed" ? "[Background task completed]" : `[Background task ${task.status}]`
   const parts = [header, formatKeyValueBlock(rows)]
 
-  if (task.result) {
-    const preview = truncatePreview(task.result, RESULT_PREVIEW_MAX)
-    parts.push("", "Result:", preview)
+  if (task.status === "completed") {
+    parts.push("", `Use task({ task_id: "${task.childSessionID}" }) to retrieve the full result.`)
   } else if (task.error) {
     parts.push("", `Error: ${task.error}`)
   }

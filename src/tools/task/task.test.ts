@@ -484,8 +484,9 @@ describe("formatTaskNotification", () => {
       durationMs: 5000,
     })
     expect(out).toContain("[Background task completed]")
-    expect(out).toContain("found 10 files")
     expect(out).toContain("anthropic/claude-sonnet-4-6")
+    expect(out).toContain('task({ task_id: "c1" })')
+    expect(out).not.toContain("found 10 files")
   })
 
   it("says '[Background task error]' for error tasks", () => {
