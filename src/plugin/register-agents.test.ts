@@ -88,11 +88,12 @@ describe("registerAgents", () => {
       // when
       registerAgents(openCodeConfig, ourConfig, "/tmp")
       // then
-      expect(openCodeConfig.agent?.explore?.tools).toEqual({
-        read: true,
-        edit: false,
-        task: false,
-      })
+      expect(openCodeConfig.agent?.explore?.tools?.read).toBe(true)
+      expect(openCodeConfig.agent?.explore?.tools?.edit).toBe(false)
+      expect(openCodeConfig.agent?.explore?.tools?.task).toBe(false)
+      // grep and glob are NOT in allow=["read"], so they're false.
+      expect(openCodeConfig.agent?.explore?.tools?.grep).toBe(false)
+      expect(openCodeConfig.agent?.explore?.tools?.glob).toBe(false)
     })
   })
 
@@ -111,6 +112,8 @@ describe("registerAgents", () => {
         read: true,
         edit: true,
         task: false,
+        grep: true,
+        glob: true,
       })
     })
   })

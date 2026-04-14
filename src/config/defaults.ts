@@ -34,7 +34,7 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentName, AgentDefinition> = {
     // an unknown tool — the drift is by design; fix by registering the tool, not by
     // inflating the allowlist.
     tools: {
-      allow: ["read"],
+      allow: ["read", "grep", "glob"],
     },
   },
 

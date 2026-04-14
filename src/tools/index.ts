@@ -13,11 +13,13 @@ import type { ToolDefinition } from "@opencode-ai/plugin"
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { ResolvedConfig } from "../config/types"
 import { createEditTool } from "./edit/edit"
+import { createGlobTool } from "./glob/glob"
+import { createGrepTool } from "./grep/grep"
 import { createReadTool } from "./read/read"
 import { createTaskTool } from "./task/task"
 
 /** Names of tools opensober ships in v1. Used by the CLI's summary view and by doctor. */
-export const TOOL_NAMES = ["read", "edit", "task"] as const
+export const TOOL_NAMES = ["read", "edit", "task", "grep", "glob"] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 /** Runtime dependencies that tools need beyond config. */
@@ -33,6 +35,8 @@ export function createTools(
     read: createReadTool(config),
     edit: createEditTool(config),
     task: createTaskTool(config, deps),
+    grep: createGrepTool(config),
+    glob: createGlobTool(config),
   }
 
   const disabled = new Set(config.tools.disabled)
