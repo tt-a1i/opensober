@@ -23,7 +23,36 @@ git clone <本仓库>
 cd opensober
 bun install
 bun run build
+npm pack                    # 生成 opensober-0.1.0.tgz
 ```
+
+安装到 opencode：
+
+```bash
+cd ~/.config/opencode
+bun add /path/to/opensober-0.1.0.tgz
+```
+
+在 `~/.config/opencode/opencode.json` 中注册：
+
+```jsonc
+{
+  // 用 file URL 指向 opensober 的构建入口
+  "plugin": ["file:///path/to/.config/opencode/node_modules/opensober/dist/index.js"],
+
+  // orchestrator 必须作为静态 primary agent 声明，才会出现在 opencode 的 agent 选择器里
+  "agent": {
+    "orchestrator": {
+      "model": "your-provider/your-model",
+      "mode": "primary"
+    }
+  }
+}
+```
+
+> **注意**：opencode 的 UI agent 列表依赖静态配置，不仅仅来自插件动态注册。
+> 上面的 `orchestrator` 条目是 UI 锚点；opensober 的 `explore` 和 `reviewer`
+> 子 agent 由插件动态注册，通过 `task` 工具调用，不需要静态配置。
 
 Peer 依赖：`@opencode-ai/plugin ^1.4.0`。仅支持 Bun（>= 1.3.0），不提供 Node fallback。
 

@@ -23,7 +23,39 @@ git clone <this-repo>
 cd opensober
 bun install
 bun run build
+npm pack                    # produces opensober-0.1.0.tgz
 ```
+
+Then install into your opencode config:
+
+```bash
+cd ~/.config/opencode
+bun add /path/to/opensober-0.1.0.tgz
+```
+
+Add to `~/.config/opencode/opencode.json`:
+
+```jsonc
+{
+  // Register opensober as a plugin (file URL to the built entry)
+  "plugin": ["file:///path/to/.config/opencode/node_modules/opensober/dist/index.js"],
+
+  // opensober's orchestrator must be declared as a static primary agent
+  // for it to appear in the opencode agent selector UI.
+  "agent": {
+    "orchestrator": {
+      "model": "your-provider/your-model",
+      "mode": "primary"
+    }
+    // ... your other agents
+  }
+}
+```
+
+> **Note:** opencode's UI agent list reads from static config, not solely from plugin
+> dynamic registration. The `orchestrator` entry above is the UI anchor; opensober's
+> `explore` and `reviewer` subagents are registered dynamically and accessible via
+> the `task` tool, but don't need static entries.
 
 Peer requirement: `@opencode-ai/plugin ^1.4.0`. Bun-only (>= 1.3.0); no Node fallback.
 
