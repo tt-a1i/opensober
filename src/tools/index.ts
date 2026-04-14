@@ -10,6 +10,7 @@
 // users notice typos without the plugin failing to load.
 
 import type { ToolDefinition } from "@opencode-ai/plugin"
+import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { ResolvedConfig } from "../config/types"
 import { createEditTool } from "./edit/edit"
 import { createReadTool } from "./read/read"
@@ -19,11 +20,19 @@ import { createTaskTool } from "./task/task"
 export const TOOL_NAMES = ["read", "edit", "task"] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
-export function createTools(config: ResolvedConfig): Partial<Record<ToolName, ToolDefinition>> {
+/** Runtime dependencies that tools need beyond config. */
+export interface ToolDependencies {
+  readonly client: OpencodeClient
+}
+
+export function createTools(
+  config: ResolvedConfig,
+  deps: ToolDependencies,
+): Partial<Record<ToolName, ToolDefinition>> {
   const all: Record<ToolName, ToolDefinition> = {
     read: createReadTool(config),
     edit: createEditTool(config),
-    task: createTaskTool(config),
+    task: createTaskTool(config, deps),
   }
 
   const disabled = new Set(config.tools.disabled)
@@ -37,6 +46,5 @@ export function createTools(config: ResolvedConfig): Partial<Record<ToolName, To
 
 export { assertCanDelegate, assertCanWrite, ToolPermissionError } from "./common/guards"
 export { createEditTool } from "./edit/edit"
-// Re-exports so consumers can reach the factories / errors directly when needed.
 export { createReadTool } from "./read/read"
 export { createTaskTool } from "./task/task"

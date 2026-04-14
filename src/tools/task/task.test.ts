@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import type { ResolvedAgent } from "../../config/extends"
 import type { ResolvedConfig } from "../../config/types"
 import { ToolPermissionError } from "../common/guards"
+import type { ToolDependencies } from "../index"
 import { createTaskTool } from "./task"
 
 function makeConfig(agents: Record<string, Partial<ResolvedAgent>>): ResolvedConfig {
@@ -17,7 +18,7 @@ function makeConfig(agents: Record<string, Partial<ResolvedAgent>>): ResolvedCon
   return {
     version: 1,
     agents: full,
-    tools: {},
+    tools: { disabled: [] },
     hooks: { disabled: [] },
     mcp: { disabled: [] },
     skills: { disabled: [], paths: [] },
@@ -29,7 +30,7 @@ function makeConfig(agents: Record<string, Partial<ResolvedAgent>>): ResolvedCon
 
 function fakeCtx(agent: string) {
   return {
-    sessionID: "s",
+    sessionID: "parent-session",
     messageID: "m",
     agent,
     directory: "/tmp",
@@ -40,15 +41,101 @@ function fakeCtx(agent: string) {
   }
 }
 
-describe("createTaskTool — permission matrix", () => {
-  describe("#given writable caller and writable target", () => {
-    it("#when invoked #then stub acknowledgement is returned with structured fields", async () => {
+/**
+ * Mock client that simulates a successful child session.
+ * Status goes busy → idle. Messages return one assistant text.
+ */
+function makeMockDeps(text = "child agent output"): ToolDependencies {
+  let statusCalls = 0
+  // biome-ignore lint/suspicious/noExplicitAny: test mock needs flexible shape
+  const client: any = {
+    session: {
+      create: async () => ({ data: { id: "child-test-id" } }),
+      promptAsync: async () => ({ data: undefined }),
+      status: async () => {
+        statusCalls++
+        return { data: { "child-test-id": { type: statusCalls >= 2 ? "idle" : "busy" } } }
+      },
+      messages: async () => ({
+        data: [
+          {
+            info: {
+              role: "assistant",
+              modelID: "test-model",
+              providerID: "test-provider",
+              cost: 0.001,
+              tokens: { input: 100, output: 50 },
+            },
+            parts: [{ type: "text", text }],
+          },
+        ],
+      }),
+      abort: async () => ({ data: undefined }),
+    },
+  }
+  return { client }
+}
+
+describe("createTaskTool — permission checks (guard layer)", () => {
+  describe("#given readonly caller and writable target", () => {
+    it("#when invoked #then ToolPermissionError before any session call", async () => {
+      // given
+      const task = createTaskTool(
+        makeConfig({
+          reviewer: { readonly: true, can_delegate: true },
+          orchestrator: { readonly: false },
+        }),
+        makeMockDeps(),
+      )
+      // when / then
+      await expect(
+        task.execute({ agent: "orchestrator", prompt: "escape" }, fakeCtx("reviewer")),
+      ).rejects.toThrow(ToolPermissionError)
+    })
+  })
+
+  describe("#given caller with can_delegate=false", () => {
+    it("#when invoked #then ToolPermissionError", async () => {
+      // given
+      const task = createTaskTool(
+        makeConfig({
+          explore: { can_delegate: false },
+          orchestrator: { readonly: false },
+        }),
+        makeMockDeps(),
+      )
+      // when / then
+      await expect(
+        task.execute({ agent: "orchestrator", prompt: "oops" }, fakeCtx("explore")),
+      ).rejects.toThrow(/cannot delegate/)
+    })
+  })
+
+  describe("#given unknown target", () => {
+    it("#when invoked #then ToolPermissionError", async () => {
+      // given
+      const task = createTaskTool(
+        makeConfig({ orchestrator: { readonly: false, can_delegate: true } }),
+        makeMockDeps(),
+      )
+      // when / then
+      await expect(
+        task.execute({ agent: "ghost", prompt: "?" }, fakeCtx("orchestrator")),
+      ).rejects.toThrow(/target/)
+    })
+  })
+})
+
+describe("createTaskTool — successful execution", () => {
+  describe("#given writable caller and writable target with mock client", () => {
+    it("#when invoked #then returns structured 'task completed' output with child text", async () => {
       // given
       const task = createTaskTool(
         makeConfig({
           orchestrator: { readonly: false, can_delegate: true },
           other: { readonly: false },
         }),
+        makeMockDeps("hello from child"),
       )
       // when
       const out = await task.execute(
@@ -56,51 +143,14 @@ describe("createTaskTool — permission matrix", () => {
         fakeCtx("orchestrator"),
       )
       // then
-      expect(out).toContain("task (stub")
-      expect(out).toContain("caller:          orchestrator")
-      expect(out).toContain("target:          other")
-      expect(out).toContain(`prompt:          "do a thing"`)
-      expect(out).toContain("permission:      passed")
-      expect(out).toContain("readonly taint:  respected")
-      expect(out).toContain("Do NOT assume the work was done")
-    })
-  })
-
-  describe("#given a long prompt", () => {
-    it("#when invoked #then the prompt preview is truncated with an ellipsis", async () => {
-      // given
-      const task = createTaskTool(
-        makeConfig({
-          orchestrator: { readonly: false, can_delegate: true },
-          other: { readonly: false },
-        }),
-      )
-      const longPrompt = "a".repeat(200)
-      // when
-      const out = await task.execute(
-        { agent: "other", prompt: longPrompt },
-        fakeCtx("orchestrator"),
-      )
-      // then
-      expect(out).toContain("…")
-      // First 80 chars of the prompt should appear verbatim.
-      expect(out).toContain("a".repeat(80))
-    })
-  })
-
-  describe("#given writable caller and readonly target", () => {
-    it("#when invoked #then succeeds (writable -> readonly is allowed)", async () => {
-      // given
-      const task = createTaskTool(
-        makeConfig({
-          orchestrator: { readonly: false, can_delegate: true },
-          explore: { readonly: true },
-        }),
-      )
-      // when / then
-      await expect(
-        task.execute({ agent: "explore", prompt: "read stuff" }, fakeCtx("orchestrator")),
-      ).resolves.toContain("target:          explore")
+      expect(out).toContain("task completed")
+      expect(out).toContain("caller")
+      expect(out).toContain("orchestrator")
+      expect(out).toContain("target")
+      expect(out).toContain("other")
+      expect(out).toContain("child session")
+      expect(out).toContain("child-test-id")
+      expect(out).toContain("hello from child")
     })
   })
 
@@ -112,56 +162,16 @@ describe("createTaskTool — permission matrix", () => {
           reviewer: { readonly: true, can_delegate: true },
           "security-review": { readonly: true },
         }),
+        makeMockDeps("audit result"),
       )
-      // when / then
-      await expect(
-        task.execute({ agent: "security-review", prompt: "audit this" }, fakeCtx("reviewer")),
-      ).resolves.toContain("task (stub")
-    })
-  })
-
-  describe("#given readonly caller and WRITABLE target", () => {
-    it("#when invoked #then ToolPermissionError (readonly cannot be escaped)", async () => {
-      // given
-      const task = createTaskTool(
-        makeConfig({
-          reviewer: { readonly: true, can_delegate: true },
-          orchestrator: { readonly: false },
-        }),
+      // when
+      const out = await task.execute(
+        { agent: "security-review", prompt: "audit this" },
+        fakeCtx("reviewer"),
       )
-      // when / then
-      await expect(
-        task.execute({ agent: "orchestrator", prompt: "escape" }, fakeCtx("reviewer")),
-      ).rejects.toThrow(ToolPermissionError)
-    })
-  })
-
-  describe("#given caller with can_delegate=false", () => {
-    it("#when invoked #then ToolPermissionError regardless of target", async () => {
-      // given
-      const task = createTaskTool(
-        makeConfig({
-          explore: { can_delegate: false },
-          orchestrator: { readonly: false },
-        }),
-      )
-      // when / then
-      await expect(
-        task.execute({ agent: "orchestrator", prompt: "oops" }, fakeCtx("explore")),
-      ).rejects.toThrow(/cannot delegate/)
-    })
-  })
-
-  describe("#given an unknown target", () => {
-    it("#when invoked #then ToolPermissionError mentioning 'target'", async () => {
-      // given
-      const task = createTaskTool(
-        makeConfig({ orchestrator: { readonly: false, can_delegate: true } }),
-      )
-      // when / then
-      await expect(
-        task.execute({ agent: "ghost", prompt: "?" }, fakeCtx("orchestrator")),
-      ).rejects.toThrow(/target/)
+      // then
+      expect(out).toContain("task completed")
+      expect(out).toContain("audit result")
     })
   })
 })

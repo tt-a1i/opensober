@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { ResolvedAgent } from "../config/extends"
 import type { ResolvedConfig } from "../config/types"
-import { createTools, TOOL_NAMES } from "./index"
+import { createTools, TOOL_NAMES, type ToolDependencies } from "./index"
 
 function makeConfig(disabled: string[] = []): ResolvedConfig {
   const agents: Record<string, ResolvedAgent> = {
@@ -20,11 +20,14 @@ function makeConfig(disabled: string[] = []): ResolvedConfig {
   }
 }
 
+// Minimal mock client — createTools needs it for task tool factory.
+const fakeDeps: ToolDependencies = { client: {} as ToolDependencies["client"] }
+
 describe("createTools", () => {
   describe("#given no disabled tools", () => {
     it("#when called #then returns all three registered tools", () => {
       // when
-      const tools = createTools(makeConfig())
+      const tools = createTools(makeConfig(), fakeDeps)
       // then
       const names = Object.keys(tools).sort()
       expect(names).toEqual([...TOOL_NAMES].sort())

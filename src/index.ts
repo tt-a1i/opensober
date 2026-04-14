@@ -1,25 +1,26 @@
 // opensober — opencode plugin entry.
 //
-// Eager loadConfig at plugin-load time so any config error surfaces here, not
-// later at first hook invocation. Errors are intentionally NOT wrapped: keeping
-// ConfigLoadError / ZodError / ExtendsError as-is lets the CLI's error formatter
-// (and any future opencode-side reporter) display them with their original shape.
+// Initialization order:
+//   1. injectServerAuth — before any client.session.* call, so password-protected
+//      opencode servers work.
+//   2. loadConfig — eager so config errors surface at plugin-load time.
+//   3. createTools — closes over config + client for runtime use.
 //
-// No hooks are registered yet; they land in later rounds. This module's only job
-// today is to fail loudly on bad config and to satisfy the @opencode-ai/plugin
-// contract so opencode can load us at all.
+// Errors from loadConfig propagate unwrapped (see Round 4 design: "don't wrap").
 
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin"
 import { loadConfig } from "./config/loader"
 import { createTools } from "./tools"
+import { injectServerAuth } from "./tools/common/auth"
 
 export const NAME = "opensober"
 export const VERSION = "0.1.0"
 
 const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
+  injectServerAuth(input.client)
   const { config } = loadConfig({ cwd: input.directory })
   return {
-    tool: createTools(config),
+    tool: createTools(config, { client: input.client }),
   }
 }
 
