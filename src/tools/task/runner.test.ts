@@ -15,8 +15,14 @@ import {
 interface MockScenario {
   /** Status types returned in sequence; last value repeats if polls exceed list. */
   statusSequence?: string[]
-  /** Messages returned by session.messages. */
+  /** Messages returned by session.messages (used both mid-poll and for final result). */
   messages?: unknown[]
+  /**
+   * If set, messages returned mid-poll (during busy) differ from final messages.
+   * Each entry is the messages array for that poll tick (for testing turn counting).
+   * Falls back to `messages` if not provided.
+   */
+  pollingMessages?: unknown[][]
   /** If set, session.create throws this. */
   createError?: Error
   /** If set, session.promptAsync throws this. */
@@ -26,7 +32,7 @@ interface MockScenario {
 function mockClient(scenario: MockScenario = {}): OpencodeClient {
   const statuses = scenario.statusSequence ?? ["idle"]
   let statusIdx = 0
-  let abortCalled = false
+  let messagesCallIdx = 0
 
   // biome-ignore lint/suspicious/noExplicitAny: test mock — we only implement the methods runner.ts calls
   const session: any = {
@@ -44,15 +50,17 @@ function mockClient(scenario: MockScenario = {}): OpencodeClient {
       return { data: { "child-mock": { type } } }
     },
     messages: async () => {
+      // During polling, runner calls messages to count assistant turns.
+      // After the loop, runner calls messages one more time for the final result.
+      if (scenario.pollingMessages) {
+        const msgs =
+          scenario.pollingMessages[Math.min(messagesCallIdx, scenario.pollingMessages.length - 1)]
+        messagesCallIdx++
+        return { data: msgs ?? [] }
+      }
       return { data: scenario.messages ?? [] }
     },
-    abort: async () => {
-      abortCalled = true
-      return { data: undefined }
-    },
-    get abortCalled() {
-      return abortCalled
-    },
+    abort: async () => ({ data: undefined }),
   }
   return { session } as unknown as OpencodeClient
 }
@@ -84,6 +92,7 @@ describe("runChildSession — happy path", () => {
         messages: [
           {
             info: {
+              id: "msg-1",
               role: "assistant",
               modelID: "claude-opus-4-6",
               providerID: "anthropic",
@@ -102,7 +111,8 @@ describe("runChildSession — happy path", () => {
       expect(result.model).toBe("anthropic/claude-opus-4-6")
       expect(result.cost).toBe(0.012)
       expect(result.tokens).toEqual({ input: 500, output: 200 })
-      expect(result.turns).toBeGreaterThan(0)
+      // 1 unique assistant message seen across the 2 busy-poll cycles:
+      expect(result.turns).toBe(1)
       expect(result.durationMs).toBeGreaterThanOrEqual(0)
     })
   })
@@ -156,16 +166,42 @@ describe("runChildSession — abort", () => {
 })
 
 describe("runChildSession — max turns", () => {
-  describe("#given the child never finishes within maxTurns polls", () => {
-    it("#when run #then TaskMaxTurnsError after maxTurns iterations", async () => {
-      // given
+  describe("#given the child produces more assistant turns than maxTurns", () => {
+    it("#when run #then TaskMaxTurnsError based on real assistant message count", async () => {
+      // given — each poll tick adds a new assistant message (different id).
+      // maxTurns = 3; we provide 5 ticks each with one more assistant message.
+      const pollingMessages = Array.from({ length: 5 }, (_, i) =>
+        Array.from({ length: i + 1 }, (_, j) => ({
+          info: { role: "assistant", id: `msg-${j}` },
+          parts: [{ type: "text", text: `turn ${j}` }],
+        })),
+      )
       const client = mockClient({
-        statusSequence: Array.from({ length: 20 }, () => "busy"),
+        statusSequence: Array.from({ length: 10 }, () => "busy"),
+        pollingMessages,
       })
       // when / then
-      await expect(runChildSession(client, baseOpts({ maxTurns: 5 }))).rejects.toThrow(
+      await expect(runChildSession(client, baseOpts({ maxTurns: 3 }))).rejects.toThrow(
         TaskMaxTurnsError,
       )
+    })
+  })
+})
+
+describe("runChildSession — status missing (session removed from map)", () => {
+  describe("#given session.status returns a map WITHOUT the child session", () => {
+    it("#when run #then treats as 'done' and fetches messages", async () => {
+      // given — first status has no entry for child-mock (simulates server cleanup)
+      const client = mockClient({
+        statusSequence: [], // empty → childStatus will always be undefined
+        messages: [
+          { info: { role: "assistant" }, parts: [{ type: "text", text: "already done" }] },
+        ],
+      })
+      // when
+      const result = await runChildSession(client, baseOpts())
+      // then
+      expect(result.text).toBe("already done")
     })
   })
 })

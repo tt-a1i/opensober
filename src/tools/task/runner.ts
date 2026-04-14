@@ -173,7 +173,11 @@ export async function runChildSession(
   })
 
   // ── 3. Poll until idle, abort, timeout, or max-turns ─────────────────────
+  // `turns` tracks real assistant messages (by watching info.id), NOT poll ticks.
+  // This prevents false-positives on long single-turn tasks where the child is
+  // simply busy generating output rather than looping through tool calls.
   let turns = 0
+  const seenAssistantIDs = new Set<string>()
   const deadline = t0 + maxPollWaitMs
 
   while (true) {
@@ -196,13 +200,32 @@ export async function runChildSession(
     const statusMap = statusRes.data as Record<string, { type: string }>
     const childStatus = statusMap[childID]?.type
 
-    if (childStatus === "idle") break
+    // Break on "idle" OR on missing entry — opencode may remove a session from
+    // the status map once it finishes. Treating "missing" as "done" is safer than
+    // treating it as "busy", which would poll until timeout on an already-finished task.
+    if (childStatus === "idle" || childStatus === undefined) break
 
-    turns++
+    // Count real assistant turns (deduplicated by message ID) instead of poll ticks.
+    // Periodically fetching messages costs one extra API call per poll cycle, but it
+    // gives us the correct circuit-breaker semantics: we trip on agent tool-call loops,
+    // not on wall-clock waiting.
+    try {
+      const msgRes = await client.session.messages({ path: { id: childID }, throwOnError: true })
+      const msgs = (msgRes.data ?? []) as Array<{ info?: { id?: string; role?: string } }>
+      for (const m of msgs) {
+        if (m.info?.role === "assistant" && m.info.id && !seenAssistantIDs.has(m.info.id)) {
+          seenAssistantIDs.add(m.info.id)
+          turns++
+        }
+      }
+    } catch {
+      // Non-fatal: if messages fetch fails mid-poll we still have the status check.
+    }
+
     if (turns >= maxTurns) {
       await abortChild(client, childID)
       throw new TaskMaxTurnsError(
-        `child agent exceeded ${maxTurns} polling cycles without finishing`,
+        `child agent exceeded ${maxTurns} assistant turns without finishing`,
       )
     }
   }
