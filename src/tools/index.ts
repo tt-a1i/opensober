@@ -18,6 +18,7 @@ import { createEditTool } from "./edit/edit"
 import { createGlobTool } from "./glob/glob"
 import { createGrepTool } from "./grep/grep"
 import { createReadTool } from "./read/read"
+import type { BackgroundTaskManager } from "./task/manager"
 import { createTaskTool } from "./task/task"
 import { createWriteTool } from "./write/write"
 
@@ -37,6 +38,7 @@ export type ToolName = (typeof TOOL_NAMES)[number]
 /** Runtime dependencies that tools need beyond config. */
 export interface ToolDependencies {
   readonly client: OpencodeClient
+  readonly backgroundManager: BackgroundTaskManager
 }
 
 export function createTools(

@@ -21,7 +21,10 @@ function makeConfig(disabled: string[] = []): ResolvedConfig {
 }
 
 // Minimal mock client — createTools needs it for task tool factory.
-const fakeDeps: ToolDependencies = { client: {} as ToolDependencies["client"] }
+const fakeDeps: ToolDependencies = {
+  client: {} as ToolDependencies["client"],
+  backgroundManager: {} as ToolDependencies["backgroundManager"],
+}
 
 describe("createTools", () => {
   describe("#given no disabled tools", () => {

@@ -8,6 +8,7 @@
 // use tiny values without waiting 5 real minutes.
 
 import type { OpencodeClient } from "@opencode-ai/sdk"
+import { extractTextFromParts, findLastAssistantMessage } from "./message-helpers"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -19,6 +20,7 @@ export interface RunChildOptions {
   readonly prompt: string
   readonly abort: AbortSignal
   readonly directory: string
+  readonly model?: { providerID: string; modelID: string }
   // Test-friendly overrides (production uses defaults).
   readonly maxTurns?: number
   readonly maxPollWaitMs?: number
@@ -96,30 +98,6 @@ async function abortChild(client: OpencodeClient, childID: string): Promise<void
 
 type AnyRecord = Record<string, unknown>
 
-function extractTextFromParts(parts: unknown[]): string {
-  return parts
-    .filter((p): p is { type: "text"; text: string } => {
-      const r = p as AnyRecord
-      return r.type === "text" && typeof r.text === "string"
-    })
-    .map((p) => p.text)
-    .join("\n\n")
-}
-
-function findLastAssistantMessage(
-  messages: unknown[],
-): { info: AnyRecord; parts: unknown[] } | null {
-  // Walk backwards — the most recent assistant message is what we want.
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i] as AnyRecord
-    const info = msg.info as AnyRecord | undefined
-    if (info?.role === "assistant") {
-      return { info, parts: (msg.parts as unknown[]) ?? [] }
-    }
-  }
-  return null
-}
-
 function formatAssistantError(error: unknown): string {
   if (typeof error !== "object" || error === null) return String(error)
   const e = error as AnyRecord
@@ -159,6 +137,7 @@ export async function runChildSession(
     body: {
       agent: opts.targetAgent,
       parts: [{ type: "text", text: opts.prompt }],
+      ...(opts.model ? { model: opts.model } : {}),
     },
     throwOnError: true,
   })
