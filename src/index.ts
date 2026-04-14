@@ -8,13 +8,14 @@
 //
 // Hooks:
 //   config               — registers opensober agents into opencode's agent map
-//   tool                 — the v1 tools (read / edit / task / grep / glob / ast_grep)
+//   tool                 — the v1 tools (read / edit / write / task / grep / glob / ast_grep)
+//   tool.execute.before  — bash command safety (null-byte sanitization)
 //   tool.execute.after   — generic truncation + AGENTS.md context injection
 
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin"
 import { loadConfig } from "./config/loader"
 import type { LoaderResult } from "./config/types"
-import { injectContext, truncateToolOutput } from "./hooks"
+import { injectContext, sanitizeBashArgs, truncateToolOutput } from "./hooks"
 import { registerAgents } from "./plugin/register-agents"
 import { createTools } from "./tools"
 import { injectServerAuth } from "./tools/common/auth"
@@ -45,6 +46,11 @@ const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
       registerAgents(openCodeConfig, config, input.directory)
     },
     tool: createTools(config, { client: input.client }),
+    "tool.execute.before": async (toolInput, output) => {
+      if (toolInput.tool === "bash") {
+        sanitizeBashArgs(output.args)
+      }
+    },
     "tool.execute.after": async (toolInput, output) => {
       output.output = truncateToolOutput(output.output)
       if (toolInput.tool === "read") {

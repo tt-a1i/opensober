@@ -19,11 +19,13 @@ import { createGlobTool } from "./glob/glob"
 import { createGrepTool } from "./grep/grep"
 import { createReadTool } from "./read/read"
 import { createTaskTool } from "./task/task"
+import { createWriteTool } from "./write/write"
 
 /** Names of tools opensober ships in v1. Used by the CLI's summary view and by doctor. */
 export const TOOL_NAMES = [
   "read",
   "edit",
+  "write",
   "task",
   "grep",
   "glob",
@@ -44,6 +46,7 @@ export function createTools(
   const all: Record<ToolName, ToolDefinition> = {
     read: createReadTool(config),
     edit: createEditTool(config),
+    write: createWriteTool(config),
     task: createTaskTool(config, deps),
     grep: createGrepTool(config),
     glob: createGlobTool(config),
@@ -64,3 +67,4 @@ export { assertCanDelegate, assertCanWrite, ToolPermissionError } from "./common
 export { createEditTool } from "./edit/edit"
 export { createReadTool } from "./read/read"
 export { createTaskTool } from "./task/task"
+export { createWriteTool } from "./write/write"
