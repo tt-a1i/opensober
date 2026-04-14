@@ -8,7 +8,7 @@
 // is directly executable; `npm install` chmods the bin target automatically.
 
 import { Command } from "commander"
-import { NAME, VERSION } from "../index"
+import { NAME, VERSION } from "../meta"
 import { doctorCommand } from "./doctor"
 import { runCommand } from "./run"
 

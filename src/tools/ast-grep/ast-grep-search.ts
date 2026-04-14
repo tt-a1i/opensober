@@ -7,7 +7,6 @@
 // No permission gate — read-only, safe for all agents.
 
 import { resolve } from "node:path"
-import { findInFiles } from "@ast-grep/napi"
 import { type ToolDefinition, tool } from "@opencode-ai/plugin"
 import type { ResolvedConfig } from "../../config/types"
 
@@ -20,6 +19,10 @@ interface Match {
   readonly line: number
   readonly col: number
   readonly text: string
+}
+
+async function loadAstGrep(): Promise<typeof import("@ast-grep/napi")> {
+  return import("@ast-grep/napi")
 }
 
 export function createAstGrepSearchTool(_config: ResolvedConfig): ToolDefinition {
@@ -35,6 +38,7 @@ export function createAstGrepSearchTool(_config: ResolvedConfig): ToolDefinition
       path: z.string().optional().describe("directory to search in; defaults to the project root"),
     },
     execute: async (args, ctx): Promise<string> => {
+      const { findInFiles } = await loadAstGrep()
       const searchPath = args.path !== undefined ? resolve(ctx.directory, args.path) : ctx.directory
       const matches: Match[] = []
       let truncated = false

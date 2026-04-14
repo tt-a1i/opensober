@@ -17,9 +17,6 @@ import { registerAgents } from "./plugin/register-agents"
 import { createTools } from "./tools"
 import { injectServerAuth } from "./tools/common/auth"
 
-export const NAME = "opensober"
-export const VERSION = "0.1.0"
-
 const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
   injectServerAuth(input.client)
   const { config } = loadConfig({ cwd: input.directory })
@@ -43,6 +40,5 @@ const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
   }
 }
 
-// opencode expects PluginModule = { server: Plugin }, not a bare default export.
 export default opensober
 export const server = opensober

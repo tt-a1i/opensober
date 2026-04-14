@@ -8,7 +8,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { findInFiles, parse, type SgNode } from "@ast-grep/napi"
+import type { SgNode } from "@ast-grep/napi"
 import { type ToolDefinition, tool } from "@opencode-ai/plugin"
 import type { ResolvedConfig } from "../../config/types"
 import { assertCanWrite } from "../common/guards"
@@ -16,6 +16,10 @@ import { assertCanWrite } from "../common/guards"
 const z = tool.schema
 
 const MAX_FILES = 50
+
+async function loadAstGrep(): Promise<typeof import("@ast-grep/napi")> {
+  return import("@ast-grep/napi")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Metavariable substitution
@@ -60,6 +64,7 @@ export function createAstGrepReplaceTool(_config: ResolvedConfig): ToolDefinitio
         .describe("if true (default), show what would change without writing"),
     },
     execute: async (args, ctx): Promise<string> => {
+      const { findInFiles, parse } = await loadAstGrep()
       const dryRun = args.dry_run !== false // default true
       if (!dryRun) {
         assertCanWrite(ctx.agent, _config)
