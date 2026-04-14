@@ -272,6 +272,73 @@ describe("createEditTool — algorithm errors propagate with action hints", () =
   })
 })
 
+describe("createEditTool — auto-diff", () => {
+  describe("#given a single-line replacement", () => {
+    it("#when edit runs #then diff shows one removed and one added line", async () => {
+      // given
+      const file = join(testDir, "diff-replace.txt")
+      writeFileSync(file, "alpha\nbeta\ngamma\n")
+      const edit = createEditTool(makeConfig({ orchestrator: { readonly: false } }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "diff-replace.txt",
+          edits: [{ lines: [2, 2], expected_hashes: [h("beta")], replacement: "BETA" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("diff:")
+      expect(out).toContain("[2] - beta")
+      expect(out).toContain("[2] + BETA")
+    })
+  })
+
+  describe("#given a delete (empty replacement)", () => {
+    it("#when edit runs #then diff shows only the removed line", async () => {
+      // given
+      const file = join(testDir, "diff-delete.txt")
+      writeFileSync(file, "keep\ndelete-me\nalso-keep\n")
+      const edit = createEditTool(makeConfig({ orchestrator: { readonly: false } }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "diff-delete.txt",
+          edits: [{ lines: [2, 2], expected_hashes: [h("delete-me")], replacement: "" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("diff:")
+      expect(out).toContain("[2] - delete-me")
+      expect(out).not.toContain("[2] +")
+    })
+  })
+
+  describe("#given a multi-line expansion", () => {
+    it("#when edit replaces one line with three #then diff shows removed then all added lines", async () => {
+      // given
+      const file = join(testDir, "diff-expand.txt")
+      writeFileSync(file, "a\nb\nc\n")
+      const edit = createEditTool(makeConfig({ orchestrator: { readonly: false } }))
+      // when
+      const out = await edit.execute(
+        {
+          file: "diff-expand.txt",
+          edits: [{ lines: [2, 2], expected_hashes: [h("b")], replacement: "B1\nB2\nB3" }],
+        },
+        fakeCtx("orchestrator", testDir),
+      )
+      // then
+      expect(out).toContain("diff:")
+      expect(out).toContain("[2] - b")
+      expect(out).toContain("[2] + B1")
+      expect(out).toContain("[3] + B2")
+      expect(out).toContain("[4] + B3")
+    })
+  })
+})
+
 describe("createEditTool — missing file", () => {
   describe("#given a path that doesn't exist", () => {
     it("#when edit runs #then throws with a path-aware message (no file is created)", async () => {

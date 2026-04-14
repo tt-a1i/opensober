@@ -76,16 +76,68 @@ function withAction<T>(fn: () => T): T {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Diff helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DIFF_LINE_CAP = 50
+
+function splitReplacement(replacement: string): string[] {
+  if (replacement === "") return []
+  return replacement.split(/\r\n|\n/)
+}
+
+function buildDiff(
+  edits: readonly { readonly lines: readonly [number, number]; readonly replacement: string }[],
+  beforeAllLines: readonly string[],
+): string {
+  const diffLines: string[] = ["", "diff:"]
+  let total = 0
+  let truncated = 0
+
+  for (const edit of edits) {
+    const [start, end] = edit.lines
+    const removed = beforeAllLines.slice(start - 1, end)
+    const added = splitReplacement(edit.replacement)
+
+    for (let i = 0; i < removed.length; i++) {
+      if (total >= DIFF_LINE_CAP) {
+        truncated++
+        continue
+      }
+      diffLines.push(`  [${start + i}] - ${removed[i]}`)
+      total++
+    }
+    let addedLineNum = start
+    for (let i = 0; i < added.length; i++) {
+      if (total >= DIFF_LINE_CAP) {
+        truncated++
+        continue
+      }
+      diffLines.push(`  [${addedLineNum}] + ${added[i]}`)
+      addedLineNum++
+      total++
+    }
+  }
+
+  if (truncated > 0) {
+    diffLines.push(`  ... ${truncated} more diff line${truncated === 1 ? "" : "s"}`)
+  }
+
+  return diffLines.join("\n")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Success summary
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatSuccess(
   path: string,
-  edits: readonly { readonly lines: readonly [number, number] }[],
-  beforeLines: number,
+  edits: readonly { readonly lines: readonly [number, number]; readonly replacement: string }[],
+  beforeAllLines: readonly string[],
   afterLines: number,
   meta: FileMetadata,
 ): string {
+  const beforeLines = beforeAllLines.length
   const delta = afterLines - beforeLines
   const deltaStr = delta === 0 ? "0" : delta > 0 ? `+${delta}` : `${delta}`
   const rangesStr = edits.map((e) => `[${e.lines[0]},${e.lines[1]}]`).join(", ")
@@ -101,7 +153,7 @@ function formatSuccess(
     { key: "BOM", value: meta.hasBOM ? "present (preserved)" : "none (preserved)" },
   ]
 
-  return `edited: ${path}\n${formatKeyValueBlock(rows)}`
+  return `edited: ${path}\n${formatKeyValueBlock(rows)}${buildDiff(edits, beforeAllLines)}`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +194,7 @@ export function createEditTool(config: ResolvedConfig): ToolDefinition {
 
       await writeFile(path, next, "utf8")
 
-      return formatSuccess(path, args.edits, before.lines.length, after.lines.length, before.meta)
+      return formatSuccess(path, args.edits, before.lines, after.lines.length, before.meta)
     },
   })
 }
