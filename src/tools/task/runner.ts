@@ -71,10 +71,6 @@ const DEFAULT_POLL_INTERVAL_MS = 800
 const DEFAULT_MAX_TURNS = 300
 const DEFAULT_MAX_POLL_WAIT_MS = 300_000 // 5 minutes
 
-// Permission override — opencode accepts this on session.create but the SDK
-// spec doesn't declare it. Using a local extension type as a controlled exception.
-const CHILD_PERMISSION_OVERRIDE = { "question/*": "deny" }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,16 +143,11 @@ export async function runChildSession(
   const t0 = Date.now()
 
   // ── 1. Create child session ──────────────────────────────────────────────
-  // The `permission` field is accepted by opencode's server but not declared in the
-  // SDK spec. We cast to the declared body type — the extra field passes through at runtime.
-  const createBody = {
-    parentID: opts.parentSessionID,
-    title: `task: ${opts.targetAgent}`,
-    permission: CHILD_PERMISSION_OVERRIDE,
-  } as { parentID?: string; title?: string }
-
   const createRes = await client.session.create({
-    body: createBody,
+    body: {
+      parentID: opts.parentSessionID,
+      title: `task: ${opts.targetAgent}`,
+    },
     query: { directory: opts.directory },
     throwOnError: true,
   })
