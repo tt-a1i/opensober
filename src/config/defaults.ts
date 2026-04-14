@@ -21,6 +21,7 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentName, AgentDefinition> = {
     can_delegate: true,
     description:
       "Default executor. Plans, delegates, and edits. Inherits the global model unless overridden.",
+    prompt: "./prompts/orchestrator.md",
   },
 
   explore: {
@@ -29,6 +30,7 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentName, AgentDefinition> = {
     description:
       "Read-only exploration agent. Cannot edit, write, or delegate. Useful for fast " +
       "codebase questions where the answer is in the repo, not in another agent.",
+    prompt: "./prompts/explore.md",
     // Keep this list aligned with tools actually registered by createTools(). Expanding
     // it before the corresponding tool ships will make `opensober doctor` warn about
     // an unknown tool — the drift is by design; fix by registering the tool, not by
@@ -44,5 +46,6 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentName, AgentDefinition> = {
     description:
       "Read-only reviewer. May delegate to other readonly agents (e.g. a security-review " +
       "subagent) but never to a writable one — enforced by the task tool, not by convention.",
+    prompt: "./prompts/reviewer.md",
   },
 }
