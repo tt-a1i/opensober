@@ -7,19 +7,23 @@
 // Mapping:
 //   ResolvedAgent.model       → AgentConfig.model
 //   ResolvedAgent.description → AgentConfig.description
+//   ResolvedAgent.prompt      → AgentConfig.prompt (file:// resolved to text HERE)
 //   ResolvedAgent.tools       → AgentConfig.tools (allow/deny → { name: bool })
 //   "orchestrator"            → mode "primary" (appears in UI agent tab)
 //   all others                → mode "subagent" (delegation target only)
 //
-// We do NOT pass `prompt` here because our prompt might be a file:// path that
-// hasn't been resolved to text yet. Prompt resolution lands in a later round.
+// Prompt file reading happens at registration time (not at config-parse time)
+// so we keep the config layer free of I/O. If a prompt file is missing, we log
+// a warning and skip the prompt rather than failing plugin load.
 //
 // Existing entries in opencode's agent config are preserved — if a user already
 // defined the same agent name in their opencode.json, our definition does not
 // overwrite it.
 
+import { existsSync, readFileSync } from "node:fs"
 import type { Config } from "@opencode-ai/plugin"
 import type { ResolvedAgent } from "../config/extends"
+import { parsePromptSource } from "../config/prompt-source"
 import type { ResolvedConfig } from "../config/types"
 import { TOOL_NAMES } from "../tools"
 
@@ -27,7 +31,11 @@ import { TOOL_NAMES } from "../tools"
 // from the Config type rather than importing a separate named export.
 type AgentConfig = NonNullable<NonNullable<Config["agent"]>[string]>
 
-export function registerAgents(openCodeConfig: Config, ourConfig: ResolvedConfig): void {
+export function registerAgents(
+  openCodeConfig: Config,
+  ourConfig: ResolvedConfig,
+  configDir: string,
+): void {
   if (openCodeConfig.agent === undefined) {
     openCodeConfig.agent = {}
   }
@@ -35,21 +43,29 @@ export function registerAgents(openCodeConfig: Config, ourConfig: ResolvedConfig
   for (const [name, agent] of Object.entries(ourConfig.agents)) {
     // Respect user's opencode-level overrides — don't clobber.
     if (openCodeConfig.agent[name] !== undefined) continue
-    openCodeConfig.agent[name] = toAgentConfig(name, agent)
+    openCodeConfig.agent[name] = toAgentConfig(name, agent, configDir)
   }
 }
 
-function toAgentConfig(name: string, agent: ResolvedAgent): AgentConfig {
+function toAgentConfig(name: string, agent: ResolvedAgent, configDir: string): AgentConfig {
   const config: AgentConfig = {
     model: agent.model,
-    // Orchestrator is the primary UI agent; everything else is a delegation target.
     mode: name === "orchestrator" ? "primary" : "subagent",
   }
 
-  // Only set description if it's a real string — AgentConfig.description is
-  // optional-not-undefined under exactOptionalPropertyTypes.
   if (agent.description !== undefined) {
     config.description = agent.description
+  }
+
+  // Resolve prompt and prompt_append file:// paths to real text content.
+  const promptText = resolvePromptText(agent.prompt, configDir, name, "prompt")
+  const appendText = resolvePromptText(agent.prompt_append, configDir, name, "prompt_append")
+
+  if (promptText !== undefined || appendText !== undefined) {
+    const parts: string[] = []
+    if (promptText !== undefined) parts.push(promptText)
+    if (appendText !== undefined) parts.push(appendText)
+    config.prompt = parts.join("\n\n")
   }
 
   // Translate our allow/deny lists to opencode's { toolName: boolean } format.
@@ -70,4 +86,35 @@ function toAgentConfig(name: string, agent: ResolvedAgent): AgentConfig {
   }
 
   return config
+}
+
+/**
+ * Read a prompt source string (file:// or relative path) to its text content.
+ * Returns undefined if the source is not set or the file doesn't exist (with a
+ * console.warn so the user knows). Never throws — a missing prompt file should
+ * not prevent the plugin from loading.
+ */
+function resolvePromptText(
+  source: string | undefined,
+  configDir: string,
+  agentName: string,
+  field: string,
+): string | undefined {
+  if (source === undefined) return undefined
+
+  try {
+    const parsed = parsePromptSource(source, configDir)
+    if (!existsSync(parsed.path)) {
+      console.warn(
+        `[opensober] agent "${agentName}".${field}: file not found at ${parsed.path} — skipping`,
+      )
+      return undefined
+    }
+    return readFileSync(parsed.path, "utf8")
+  } catch (e) {
+    console.warn(
+      `[opensober] agent "${agentName}".${field}: failed to resolve "${source}" — ${(e as Error).message}`,
+    )
+    return undefined
+  }
 }

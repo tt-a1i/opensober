@@ -27,7 +27,7 @@ const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
   const { config } = loadConfig({ cwd: input.directory })
   return {
     config: async (openCodeConfig) => {
-      registerAgents(openCodeConfig, config)
+      registerAgents(openCodeConfig, config, input.directory)
     },
     tool: createTools(config, { client: input.client }),
   }
