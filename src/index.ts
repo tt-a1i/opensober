@@ -47,7 +47,9 @@ const opensober: Plugin = async (input: PluginInput): Promise<Hooks> => {
   }
 
   const { config } = loaded
-  const backgroundManager = new BackgroundTaskManager(input.client)
+  const backgroundManager = new BackgroundTaskManager(input.client, {
+    notifyFormatter: formatTaskNotification,
+  })
   return {
     config: async (openCodeConfig) => {
       registerAgents(openCodeConfig, config, input.directory)

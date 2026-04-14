@@ -4,6 +4,13 @@
 // Uses a setTimeout chain (not setInterval) so each tick completes before the
 // next is scheduled, preventing overlapping polls.
 //
+// Notification strategy (two-tier, inspired by OmO):
+//   1. Primary: session.promptAsync({ noReply: true }) — pushes notification to
+//      the parent session immediately. Works when parent is idle or between turns.
+//   2. Fallback: consumeCompleted() — the tool.execute.after hook in index.ts
+//      picks up any tasks that weren't push-notified and injects them into the
+//      next tool output. This catches the case where promptAsync fails.
+//
 // Lifecycle: launch() → startPolling() → pollOnce() → scheduleNext() → ...
 // The loop auto-starts on the first launch and auto-stops when no tasks remain.
 
@@ -39,6 +46,9 @@ const STALE_TASK_TTL_MS = 30 * 60 * 1000 // 30 minutes — purge consumed tasks 
 // Manager
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Formatter that turns a completed task into a notification string. */
+export type TaskNotificationFormatter = (task: BackgroundTask) => string
+
 export class BackgroundTaskManager {
   private tasks = new Map<string, BackgroundTask>()
   private consumed = new Set<string>()
@@ -46,11 +56,21 @@ export class BackgroundTaskManager {
   private client: OpencodeClient
   private timeoutMs: number
   private pollIntervalMs: number
+  private notifyFormatter: TaskNotificationFormatter | null
 
-  constructor(client: OpencodeClient, opts?: { timeoutMs?: number; pollIntervalMs?: number }) {
+  constructor(
+    client: OpencodeClient,
+    opts?: {
+      timeoutMs?: number
+      pollIntervalMs?: number
+      /** If provided, completed tasks are push-notified to the parent via promptAsync. */
+      notifyFormatter?: TaskNotificationFormatter
+    },
+  ) {
     this.client = client
     this.timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.pollIntervalMs = opts?.pollIntervalMs ?? POLL_INTERVAL_MS
+    this.notifyFormatter = opts?.notifyFormatter ?? null
   }
 
   /** Check if a new background task can be launched without exceeding the limit. */
@@ -128,6 +148,7 @@ export class BackgroundTaskManager {
     }
     task.status = "cancelled"
     task.durationMs = Date.now() - task.startedAt
+    await this.pushNotify(task)
     return true
   }
 
@@ -194,6 +215,7 @@ export class BackgroundTaskManager {
           task.status = "timeout"
           task.durationMs = Date.now() - task.startedAt
           task.error = `exceeded ${Math.round(this.timeoutMs / 1000)}s timeout`
+          await this.pushNotify(task)
           continue
         }
 
@@ -208,6 +230,7 @@ export class BackgroundTaskManager {
         task.status = "error"
         task.durationMs = Date.now() - task.startedAt
         task.error = "failed to check task status"
+        await this.pushNotify(task)
       }
     }
   }
@@ -234,6 +257,37 @@ export class BackgroundTaskManager {
       task.status = "error"
       task.durationMs = Date.now() - task.startedAt
       task.error = "failed to fetch task result"
+    }
+
+    // Push-notify the parent session. If this succeeds, mark as consumed so the
+    // hook-based fallback in tool.execute.after doesn't double-notify.
+    await this.pushNotify(task)
+  }
+
+  /**
+   * Try to push a notification to the parent session via promptAsync({ noReply: true }).
+   * On success, marks the task as consumed. On failure, silently falls through —
+   * the tool.execute.after hook will pick it up on the parent's next tool call.
+   */
+  private async pushNotify(task: BackgroundTask): Promise<void> {
+    if (!this.notifyFormatter) return
+
+    const notification = this.notifyFormatter(task)
+    // Optimistically mark consumed BEFORE the await to prevent the hook in
+    // tool.execute.after from racing and double-notifying.
+    this.consumed.add(task.childSessionID)
+    try {
+      await this.client.session.promptAsync({
+        path: { id: task.parentSessionID },
+        body: {
+          noReply: true,
+          parts: [{ type: "text", text: notification }],
+        },
+        throwOnError: true,
+      })
+    } catch {
+      // Push failed — roll back consumed mark so hook fallback can pick it up.
+      this.consumed.delete(task.childSessionID)
     }
   }
 }
