@@ -84,35 +84,79 @@ describe("createReadTool — happy path", () => {
   })
 })
 
-describe("createReadTool — large file advisory", () => {
-  describe("#given a file under the 2000-line threshold", () => {
-    it("#when read #then no advisory is added", async () => {
+describe("createReadTool — truncation", () => {
+  describe("#given a file under all thresholds (< 2000 lines, < 200 KB)", () => {
+    it("#when read #then no truncation and no advisory", async () => {
       // given
       const file = join(testDir, "small.txt")
-      const content = `${Array.from({ length: 1999 }, (_, i) => `line ${i + 1}`).join("\n")}\n`
+      const content = `${Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join("\n")}\n`
       writeFileSync(file, content)
       const read = createReadTool(makeConfig())
       // when
       const out = await read.execute({ file: "small.txt" }, fakeCtx("orchestrator", testDir))
       // then
-      expect(out).not.toContain("Note: this is a large file")
+      expect(out).not.toContain("truncated")
+      expect(out).not.toContain("Tip:")
+      expect(out.split("\n").filter((l) => l.match(/^\d+#/)).length).toBe(500)
     })
   })
 
-  describe("#given a file at or over the 2000-line threshold", () => {
-    it("#when read #then the advisory line appears after the header", async () => {
+  describe("#given a file over the 2000-line threshold", () => {
+    it("#when read #then output is truncated to 2000 annotated lines + truncation notice", async () => {
       // given
       const file = join(testDir, "big.txt")
-      const content = `${Array.from({ length: 2000 }, (_, i) => `line ${i + 1}`).join("\n")}\n`
+      const content = `${Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`).join("\n")}\n`
       writeFileSync(file, content)
       const read = createReadTool(makeConfig())
       // when
       const out = await read.execute({ file: "big.txt" }, fakeCtx("orchestrator", testDir))
       // then
       const lines = out.split("\n")
-      expect(lines[0]).toMatch(/^file: .*big\.txt \(2000 lines, /)
-      expect(lines[1]).toMatch(/^Note: this is a large file/)
-      expect(lines[2]).toBe("") // blank before the body
+      expect(lines[0]).toMatch(/^file: .*big\.txt \(3000 lines,/)
+      expect(out).toContain("truncated")
+      expect(out).toContain("showing first 2000 lines")
+      expect(out).toContain("Tip:")
+      // Annotated body should have exactly 2000 hash-prefixed lines.
+      const annotatedLines = lines.filter((l) => l.match(/^\d+#/))
+      expect(annotatedLines.length).toBe(2000)
+      // The last annotated line should be line 2000, not 3000.
+      expect(annotatedLines[annotatedLines.length - 1]).toMatch(/^2000#/)
+    })
+  })
+
+  describe("#given a file under 2000 lines but over 200 KB", () => {
+    it("#when read #then output is truncated by byte threshold", async () => {
+      // given — 100 lines of 3000 bytes each = 300 KB, well over the 200 KB limit.
+      const file = join(testDir, "wide.txt")
+      const wideLine = "x".repeat(3000)
+      const content = `${Array.from({ length: 100 }, () => wideLine).join("\n")}\n`
+      writeFileSync(file, content)
+      const read = createReadTool(makeConfig())
+      // when
+      const out = await read.execute({ file: "wide.txt" }, fakeCtx("orchestrator", testDir))
+      // then
+      expect(out).toContain("truncated")
+      // Should show fewer than 100 lines (byte limit kicks in before line limit).
+      const annotatedLines = out.split("\n").filter((l) => l.match(/^\d+#/))
+      expect(annotatedLines.length).toBeLessThan(100)
+      expect(annotatedLines.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe("#given a file at exactly 2000 lines and under 200 KB", () => {
+    it("#when read #then NOT truncated (thresholds are exclusive of the limit)", async () => {
+      // given — exactly 2000 short lines, well under 200 KB.
+      const file = join(testDir, "exact.txt")
+      const content = `${Array.from({ length: 2000 }, (_, i) => `L${i}`).join("\n")}\n`
+      writeFileSync(file, content)
+      const read = createReadTool(makeConfig())
+      // when
+      const out = await read.execute({ file: "exact.txt" }, fakeCtx("orchestrator", testDir))
+      // then — 2000 lines should NOT be truncated (the loop checks i >= MAX_LINES
+      // where i starts at 0, so line indices 0-1999 = 2000 lines are accepted).
+      expect(out).not.toContain("truncated")
+      const annotatedLines = out.split("\n").filter((l) => l.match(/^\d+#/))
+      expect(annotatedLines.length).toBe(2000)
     })
   })
 })
