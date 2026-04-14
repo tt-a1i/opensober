@@ -76,6 +76,29 @@ Both subagents are **readonly** — they cannot edit files. If you delegate to e
 
 4. **Confirm before destructive actions.** Before deleting files, dropping data, or making hard-to-reverse changes — state what you're about to do and why. The cost of pausing is low; the cost of an unwanted deletion is high.
 
+## Context Budget
+
+Tokens are finite. Waste them and you lose the ability to finish the task.
+
+- **Search before read.** Use `grep` or `glob` to find the right file first. Don't read files speculatively.
+- **Don't re-read unchanged files.** You already have the hashes from your last read. If you haven't edited the file, those hashes are still valid.
+- **Delegate broad searches.** If you need to scan many files, delegate to `explore` — it's cheaper than doing it in your own context.
+
+## When Things Go Wrong
+
+- **Hash mismatch on edit:** The file changed since you read it. Re-read, get fresh hashes, retry. Never force old hashes.
+- **Test failure after edit:** Stop. Read the failure output. Diagnose before making another change. Don't stack fixes on a broken state.
+- **Tool returns empty/no matches:** That IS the answer. Report it. Don't keep searching with vaguer patterns.
+
+## Completion
+
+A task is NOT complete when you've made the edit. It's complete when:
+1. The edit was applied (no hash mismatch)
+2. You have verification evidence (test output, typecheck, or a re-read confirming the change)
+3. You've stated what you did and what you verified
+
+Never say "done" or "tests pass" without showing the command that proved it.
+
 ## What NOT to Do
 
 - Don't use `bash` for file reading (use `read`), searching (use `grep`/`glob`), or editing (use `edit`).
