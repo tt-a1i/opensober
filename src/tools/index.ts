@@ -12,6 +12,8 @@
 import type { ToolDefinition } from "@opencode-ai/plugin"
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { ResolvedConfig } from "../config/types"
+import { createAstGrepReplaceTool } from "./ast-grep/ast-grep-replace"
+import { createAstGrepSearchTool } from "./ast-grep/ast-grep-search"
 import { createEditTool } from "./edit/edit"
 import { createGlobTool } from "./glob/glob"
 import { createGrepTool } from "./grep/grep"
@@ -19,7 +21,15 @@ import { createReadTool } from "./read/read"
 import { createTaskTool } from "./task/task"
 
 /** Names of tools opensober ships in v1. Used by the CLI's summary view and by doctor. */
-export const TOOL_NAMES = ["read", "edit", "task", "grep", "glob"] as const
+export const TOOL_NAMES = [
+  "read",
+  "edit",
+  "task",
+  "grep",
+  "glob",
+  "ast_grep_search",
+  "ast_grep_replace",
+] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 /** Runtime dependencies that tools need beyond config. */
@@ -37,6 +47,8 @@ export function createTools(
     task: createTaskTool(config, deps),
     grep: createGrepTool(config),
     glob: createGlobTool(config),
+    ast_grep_search: createAstGrepSearchTool(config),
+    ast_grep_replace: createAstGrepReplaceTool(config),
   }
 
   const disabled = new Set(config.tools.disabled)

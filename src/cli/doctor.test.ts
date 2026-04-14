@@ -57,7 +57,7 @@ describe("doctorCommand — clean config", () => {
       expect(text).toContain("explore")
       expect(text).toContain("reviewer")
       expect(text).toContain("tools")
-      expect(text).toContain("edit, glob, grep, read, task")
+      expect(text).toContain("ast_grep_replace, ast_grep_search, edit, glob, grep, read, task")
       expect(text).toContain("warnings")
       expect(text).toContain("(none)")
     })
