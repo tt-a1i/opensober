@@ -280,7 +280,9 @@ export class BackgroundTaskManager {
       await this.client.session.promptAsync({
         path: { id: task.parentSessionID },
         body: {
-          noReply: true,
+          // noReply: false → the parent agent wakes up, reads the notification,
+          // and automatically calls task({ task_id }) to retrieve the full result.
+          noReply: false,
           parts: [{ type: "text", text: notification }],
         },
         throwOnError: true,
